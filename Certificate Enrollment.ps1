@@ -53,7 +53,8 @@ if ($listener){
     #Compare that to our longest cert...
         
     #grabs the longest lasting cert availble for SSL 
-    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | sort NotAfter -Descending | Select -ExpandProperty ThumbPrint | select -First 1
+    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | 
+        Where Issuer -NotLike *$($ENV:COMPUTERNAME)* | sort NotAfter -Descending | Select -ExpandProperty ThumbPrint | select -First 1
 
     write-log "is the current cert for ssl the longest one available ? $($longestCert -eq $CertThumbprt)" -tee
 
