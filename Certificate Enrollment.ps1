@@ -1,4 +1,6 @@
-﻿<# agree on a convention for error codes
+﻿#Requires -version 4
+
+<# agree on a convention for error codes
 # thoughts
 #  0 - success
 #  1 - invalid cert (expired / name mismatch)
@@ -14,7 +16,7 @@ function Write-Log {
         [int]$ErrorLevel=1, # 1 - info, 2 - warning, 3 - error
         [Parameter(position=1,ValueFromPipeline=$true)][string]$Msg,
         [Parameter(position=2)][string]$Component, # source of the entry
-        [Parameter(position=3)][string]$LogFile = "c:\temp\LPUlog.log",
+        [Parameter(position=3)][string]$LogFile = "$env:windir\temp\LPUlog.log",
         [switch]$break,
         [switch]$tee
 
@@ -46,12 +48,12 @@ if ($listener){
     $ListenerName = dir WSMan:\localhost\Listener | Where Keys -like *https* | select -expand Name
 
     #Get the WINRM HTTPS listener certificate thumbprint
-    $CertThumbprt =  get-childitem "WSMan:\localhost\Listener\$ListenerName" | Where Name -like "CertificateThumbprint" |select -ExpandProperty Value
+    $CertThumbprt =  (get-childitem "WSMan:\localhost\Listener\$ListenerName" | Where Name -like "CertificateThumbprint" |select -ExpandProperty Value) -replace " ",""
 
     #Compare that to our longest cert...
         
     #grabs the longest lasting cert availble for SSL 
-    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | sort NotAfter -Descending | Select -ExpandProperty ThumbPrint
+    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | sort NotAfter -Descending | Select -ExpandProperty ThumbPrint | select -First 1
 
     write-log "is the current cert for ssl the longest one available ? $($longestCert -eq $CertThumbprt)" -tee
 
@@ -75,8 +77,11 @@ if ($listener){
     #Do we have a longer cert available and we're not using it?  Lets fix that
     If ($longestCert -ne $CertThumbprt){
         
-        $certpath =  get-childitem "WSMan:\localhost\Listener\$ListenerName" | Where Name -like "CertificateThumbprint" 
-        Set-Item -Path $certpath\CertificateThumbprint -Value 'THUMBPRINT';
+        $certpath =  (get-childitem "WSMan:\localhost\Listener\$ListenerName" | Where Name -like "CertificateThumbprint").pspath 
+        Set-Item -Path "WSMan:\localhost\Listener\$listenername\CertificateThumbprint" -Value $longestCert -Force
+        #PowerShell gymnastics to use WinRM without errors
+        $cmd = "winrm set winrm/config/service '@{CertificateThumbprint=`"$longestCert`"}'"
+        Invoke-Expression $cmd
         
     }
 
@@ -85,7 +90,7 @@ else{
     #if no listener...
     
     #attempts to find a certificate suitable for Client Authentication for this system, and picks the one with the longest date
-    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | sort NotAfter -Descending | Select -ExpandProperty ThumbPrint
+    $longestCert = dir cert:\localmachine\My | Where EnhancedKeyUsageList -like *Server*  | Where Subject -like *$env:COMPUTERNAME* | sort NotAfter -Descending
 
     #region errorconditions 
         #if longestCert is empty, then we can't setup a listener, lets #exit
